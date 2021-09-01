@@ -63,17 +63,19 @@ async function run() {
 
         // for issues updated in last 30 days, get removals and additions to projects
         const remove_events = [];
-        for (let i = 0; i < issues_since.data.length; i++) {  
 
+        issues_since.data.forEach( async (issueSince) => {   
+                    
             const update_issue_events = await octokit.request(
                 "GET /repos/{owner}/{repo}/issues/:issue_number/events",
                 {
                     owner,
                     repo,
-                    issue_number: issues_since.data[i].number, 
+                    issue_number: issueSince.number, 
                 }
             );  
 
+            // filter events for removals/additions
             const removals = update_issue_events.data.filter(
                 (ev) => {
                     return (
@@ -82,45 +84,46 @@ async function run() {
                 }
             );
 
-            // sort date ascending
             removals.sort((a, b) =>
                 a.created_at > b.created_at ? 1 : -1
             );
 
             // save relevant events for issue
-            for(remove_ev in removals ){
+            removals.forEach( (removedItem) => {
                 remove_events.push(
                     {
-                        "issue_number": issues_since.data[i].number,
-                        "event": removals[remove_ev].event,
-                        "created_at": removals[remove_ev].created_at,
-                        "html_url": issues_since.data[i].html_url,
-                        "title": issues_since.data[i].title,
-                        "project_id": removals[remove_ev].project_card.project_id
+                        "issue_number": issueSince.number,
+                        "event": removedItem.event,
+                        "created_at": removedItem.created_at,
+                        "html_url": issueSince.html_url,
+                        "title": issueSince.title,
+                        "project_id": removedItem.project_card.project_id
                     }
                 );
-            }
+            });
             
-        } 
+        });
 
         // iterate projects in repo
         const projectKanbans = [];
-        for (let p = 0; p < repo_projects.data.length; p++) {
+
+        repo_projects.data.forEach( async (repoProject) => {    
             if (
                 projectsToQuery.length === 0 ||
                 projectsToQuery.toLowerCase() === "all" ||
                 projectsToQuery.indexOf(
-                    repo_projects.data[p].number.toString()
+                    repoProject.number.toString()
                 ) > -1
             ) {
                 // get columns for project
-                const project_id = repo_projects.data[p].id;
+                const project_id = repoProject.id;
+
                 const columns = await octokit.request(
                     "GET /projects/:project_id/columns",
                     {
                         owner,
                         repo,
-                        project_id: repo_projects.data[p].id,
+                        project_id: repoProject.id,
                     }
                 );
 
@@ -132,41 +135,42 @@ async function run() {
                     };
                 });
 
-                // removed issues - filter out those that were subsequently added back
                 const removed_issues = remove_events.filter( (ev,i,array) => { 
-                    if(ev.event.toString()==='removed_from_project' && ev.project_id===project_id) {   
-                        for(let subsequent=i+1;subsequent < array.length;subsequent++ ){
+                    if(ev.event.toString()==='removed_from_project' && ev.project_id===project_id) { 
+                        // check subsequent events to see if re-added  
+                        for(let subsequent=i+1; subsequent < array.length; subsequent++ ){
                             if(array[subsequent].issue_number.toString() ===  ev.issue_number.toString() && array[subsequent].event === "added_to_project"){
-                              return false; // ignore removals that were added back
+                              return false;
                             }
                         }
-                        return true; // keep removals not re-added
+                        return true;
                     }else{
-                        return false; // ignore adds
+                        return false;
                     }
                 });
 
                 // iterate columns
-                for (let col = 0; col < columns.data.length; col++) {
+
+                columns.data.forEach( async (columnData) => {
                     // get cards for column
                     const cards = await octokit.request(
                         "GET /projects/columns/:column_id/cards",
                         {
                             owner,
                             repo,
-                            column_id: columns.data[col].id,
+                            column_id: columnData.id,
                         }
                     );
 
                     // iterate cards
-                    for (columnCard in cards.data) {
+                    cards.data.forEach( async (columnCardData) => {
                         // get card details
                         const card = await octokit.request(
                             "GET /projects/columns/cards/:card_id",
                             {
                                 owner,
                                 repo,
-                                card_id: cards.data[columnCard].id,
+                                card_id: columnCardData.id,
                             }
                         );
 
@@ -179,7 +183,7 @@ async function run() {
                             const issue_number =
                                 contentUrlParts[contentUrlParts.length - 1];
 
-                            // GET REPO EVENTS
+                            // GET ISSUE EVENTS
                             const issue_events = await octokit.request(
                                 "GET /repos/:owner/:repo/issues/:issue_number/events",
                                 {
@@ -222,31 +226,31 @@ async function run() {
                             // 4 - closed
                             // 5 - removed_from_project (TODO)
 
-                            for (let e = 0; e < events_summary.length; e++) {
+                            events_summary.forEach( async (eventData) => {
                                 // filter out events outside time range
                                 if (
-                                    Math.abs(events_summary[e].days_ago) <=
+                                    Math.abs(eventData.days_ago) <=
                                         daysToQuery &&
-                                    events_summary[e].days_ago <= 0
+                                    eventData.days_ago <= 0
                                 ) {
-                                    relevant_events.push(events_summary[e]);
+                                    relevant_events.push(eventData);
 
                                     // most relevant change determines grouping
-                                    if(events_summary[e].event ===
+                                    if(eventData.event ===
                                         "moved_columns_in_project" && issueGroup===0){
                                             issueGroup = 1;
                                     }
-                                    if(events_summary[e].event === "added_to_project" || events_summary[e].event === "converted_note_to_issue"){
+                                    if(eventData.event === "added_to_project" || eventData.event === "converted_note_to_issue"){
                                         issueGroup = 2;
                                     }
-                                    if(events_summary[e].event === "reopened" ){
+                                    if(eventData.event === "reopened" ){
                                         issueGroup = 3;
                                     }                                                               
-                                    if(events_summary[e].event === "closed" ){
+                                    if(eventData.event === "closed" ){
                                         issueGroup = 4;
                                     } 
                                 }
-                            }
+                            });
 
                             // describe flow between now and days ago
                             const flow = relevant_events
@@ -312,25 +316,28 @@ async function run() {
                         } else {
                             console.log("ignoring note");
                         }
-                    }
+                    });
+
+                    // TODO: determine issues removed 
+                    // (those not in any columns and with a removed_from_project within dates and project)
+
                     // sort by group (0-unchanged, 1-moved, 2-added)
                     kanbanColumns[col].issues.sort((a, b) =>
                         a.group > b.group ? 1 : -1
                     );
-                }
+                });
 
                 projectKanbans.push(
                     drawKanban(
-                        repo_projects.data[p].name,
-                        repo_projects.data[p].html_url,
+                        repoProject.name,
+                        repoProject.html_url,
                         kanbanColumns,
                         daysToQuery,
                         removed_issues
                     )
-                );
-
+                );              
             }
-        }
+        });
 
         // TODO: can CSS be input?
         const cssStyle =
@@ -346,7 +353,8 @@ async function run() {
             " .grouping2  {background-color: #c2d4dd;  border-radius: 6px; border: 1px solid #bbbbbb; padding: 8px; }" +
             " .grouping3  {background-color: #eaece5;  border-radius: 6px; border: 1px solid #bbbbbb; padding: 8px; }" +
             " .grouping4  {background-color: #b2c2bf;  border-radius: 6px; border: 1px solid #bbbbbb; padding: 8px; }" +
-            " .grouping5  {background-color: #f0efef;  border-radius: 6px; border: 1px solid #bbbbbb; padding: 8px; }" +            " .column { font-weight: bold; text-align: center;    }" +
+            " .grouping5  {background-color: #f0efef;  border-radius: 6px; border: 1px solid #bbbbbb; padding: 8px; }" +
+            " .column { font-weight: bold; text-align: center;    }" +
             " table { width: 100%; padding: 4px; border-spacing: 4px;}" +
             " td {background-color: #f0efef; width:150px; padding: 8px; vertical-align: top; text-align:left; border: 1px solid #cccccc;  border-radius: 6px;} " +
             " </style></head>";
@@ -364,7 +372,7 @@ async function run() {
         );
 
         // email kanbans
-        // TODO: validate recipients and other email input
+
         if (recipientEmails.indexOf("@") > -1) {
             let subject =
                 "Project activity " +
