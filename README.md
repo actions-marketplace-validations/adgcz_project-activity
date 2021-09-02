@@ -6,7 +6,7 @@ For a given number of recent days, this action creates a summary of kanban board
 For example, schedule the action to run each Monday morning to receive a summary of the past 7 days activity.
 
 See a sample summary (once viewing the sample, mouse over the link of an issue to see a tool tip summarising its flow through kanban columns):
-    * <a href="http://htmlpreview.github.com/?https://github.com/adgcz/project-activity/blob/main/sample.html">sample email content</a>
+    * <a href="http://htmlpreview.github.io/?https://github.com/adgcz/project-activity/blob/main/sample.html">sample email content</a>
 
 ## Inputs
 
