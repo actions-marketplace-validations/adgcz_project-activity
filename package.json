@@ -27,7 +27,7 @@
   "dependencies": {
     "@actions/core": "^1.1.1",
     "@actions/github": "^4.0.0",
-    "@octokit/rest": "^18.0.4",
+    "@octokit/rest": "^19.0.5",
     "fs": "0.0.1-security",
     "make-dir": "^3.1.0",
     "nodemailer": "^6.4.11",
